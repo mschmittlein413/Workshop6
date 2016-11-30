@@ -5,6 +5,7 @@ var StatusUpdateSchema = require('./schemas/statusupdate.json');
 var validate = require('express-jsonschema').validate;
 var writeDocument = database.writeDocument;
 var addDocument = database.addDocument;
+var CommentSchema = require('./schemas/comment.json');
 
 /**
 * Resolves a feed item. Internal to the server, since it's synchronous.
@@ -68,6 +69,28 @@ function getUserIdFromToken(authorizationLine) {
 var express = require('express');
 // Creates an Express server.
 var app = express();
+
+app.use(bodyParser.text());
+// Support receiving text in HTTP request bodies
+app.use(bodyParser.text());
+// Support receiving JSON in HTTP request bodies
+app.use(bodyParser.json());
+// You run the server from `server`, so `../client/build` is `server/../client/build`.
+// '..' means "go up one directory", so this translates into `client/build`!
+app.use(express.static('../client/build'));
+/**
+* Translate JSON Schema Validation failures into error 400s.
+*/
+app.use(function(err, req, res, next) {
+  if (err.name === 'JsonSchemaValidation') {
+    // Set a bad request http response status
+    res.status(400).end();
+  } else {
+    // It's some other sort of error; pass it to next error middleware handler
+    next(err);
+  }
+});
+
 /**
 * Get the feed data for a particular user.
 */
@@ -121,6 +144,7 @@ function postStatusUpdate(user, location, contents) {
   // Return the newly-posted object.
   return newStatusUpdate;
 }
+
 // `POST /feeditem { userId: user, location: location, contents: contents }`
 app.post('/feeditem',
 validate({ body: StatusUpdateSchema }), function(req, res) {
@@ -143,6 +167,35 @@ validate({ body: StatusUpdateSchema }), function(req, res) {
       res.status(401).end();
     }
   });
+
+
+  // `POST /comment`
+  app.post('/feeditem/comment',
+  validate({ body: CommentSchema }), function(req, res) {
+    // If this function runs, `req.body` passed JSON validation!
+    var body = req.body;
+    var fromUser = getUserIdFromToken(req.get('Authorization'));
+    // Check if requester is authorized to post this comment.
+    // (The requester must be the author of the comment.)
+    if (fromUser === body.authorId) {
+        var feedItem = readDocument('feedItems', body.feedItemId);
+        feedItem.comments.push({
+          "author": body.authorId,
+          "contents": body.contents,
+          "postDate": new Date().getTime(),
+          "likeCounter": []
+        });
+        writeDocument('feedItems', feedItem);
+        // When POST creates a new resource, we should tell the client about it
+        // in the 'Location' header and use status code 201.
+        res.status(201);
+        res.send(feedItem);
+      } else {
+        // 401: Unauthorized.
+        res.status(401).end();
+      }
+    });
+
   // Reset database.
   app.post('/resetdb', function(req, res) {
   console.log("Resetting database...");
@@ -230,6 +283,29 @@ validate({ body: StatusUpdateSchema }), function(req, res) {
     }
   });
 
+  // Like a comment feed item.
+  app.put('/feeditem/:feeditemid/comment/:commentidx/likelist/:userid', function(req, res) {
+    var fromUser = getUserIdFromToken(req.get('Authorization'));
+    // Convert params from string to number.
+    var feedItemId = parseInt(req.params.feeditemid, 10);
+    var commentIdx = parseInt(req.params.commentidx)
+    var userId = parseInt(req.params.userid, 10);
+    if (fromUser === userId) {
+      var feedItem = readDocument('feedItems', feedItemId);
+      // Add to likeCounter if not already present.
+      if (feedItem.comments[commentIdx].likeCounter.indexOf(userId) === -1) {
+        feedItem.comments[commentIdx].likeCounter.push(userId);
+        writeDocument('feedItems', feedItem);
+      }
+      // Return a resolved version of the likeCounter
+      res.send(feedItem.comments[commentIdx].likeCounter.map((userId) =>
+      readDocument('users', userId)));
+    } else {
+      // 401: Unauthorized.
+      res.status(401).end();
+    }
+  });
+
   // Unlike a feed item.
   app.delete('/feeditem/:feeditemid/likelist/:userid', function(req, res) {
     var fromUser = getUserIdFromToken(req.get('Authorization'));
@@ -254,6 +330,31 @@ validate({ body: StatusUpdateSchema }), function(req, res) {
       res.status(401).end();
     }
   });
+
+  // Un-Like a comment feed item.
+  app.delete('/feeditem/:feeditemid/comment/:commentidx/likelist/:userid', function(req, res) {
+    var fromUser = getUserIdFromToken(req.get('Authorization'));
+    // Convert params from string to number.
+    var feedItemId = parseInt(req.params.feeditemid, 10);
+    var commentIdx = parseInt(req.params.commentidx)
+    var userId = parseInt(req.params.userid, 10);
+    if (fromUser === userId) {
+      var feedItem = readDocument('feedItems', feedItemId);
+      var likeIndex = feedItem.comments[commentIdx].likeCounter.indexOf(userId);
+      // Add to likeCounter if not already present.
+      if (likeIndex !== -1) {
+        feedItem.comments[commentIdx].likeCounter.splice(likeIndex, 1);
+        writeDocument('feedItems', feedItem);
+      }
+      // Return a resolved version of the likeCounter
+      res.send(feedItem.comments[commentIdx].likeCounter.map((userId) =>
+      readDocument('users', userId)));
+    } else {
+      // 401: Unauthorized.
+      res.status(401).end();
+    }
+  });
+
   // Search for feed item
   app.post('/search', function(req, res) {
     var fromUser = getUserIdFromToken(req.get('Authorization'));
@@ -287,26 +388,7 @@ validate({ body: StatusUpdateSchema }), function(req, res) {
 
 
 
-app.use(bodyParser.text());
-// Support receiving text in HTTP request bodies
-app.use(bodyParser.text());
-// Support receiving JSON in HTTP request bodies
-app.use(bodyParser.json());
-// You run the server from `server`, so `../client/build` is `server/../client/build`.
-// '..' means "go up one directory", so this translates into `client/build`!
-app.use(express.static('../client/build'));
-/**
-* Translate JSON Schema Validation failures into error 400s.
-*/
-app.use(function(err, req, res, next) {
-  if (err.name === 'JsonSchemaValidation') {
-    // Set a bad request http response status
-    res.status(400).end();
-  } else {
-    // It's some other sort of error; pass it to next error middleware handler
-    next(err);
-  }
-});
+
 
 // Defines what happens when it receives the `GET /` request
 // Starts the server on port 3000!

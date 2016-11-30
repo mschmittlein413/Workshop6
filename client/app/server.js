@@ -107,30 +107,28 @@ cb(JSON.parse(xhr.responseText));
 * Adds a new status update to the database.
 */
 export function postStatusUpdate(user, location, contents, cb) {
-sendXHR('POST', '/feeditem', {
-userId: user,
-location: location,
-contents: contents
-}, (xhr) => {
-// Return the new status update.
-cb(JSON.parse(xhr.responseText));
-});
+  sendXHR('POST', '/feeditem', {
+    userId: user,
+    location: location,
+    contents: contents
+  }, (xhr) => {
+    // Return the new status update.
+    cb(JSON.parse(xhr.responseText));
+  });
 }
+
 
 /**
  * Adds a new comment to the database on the given feed item.
  */
 export function postComment(feedItemId, author, contents, cb) {
-  var feedItem = readDocument('feedItems', feedItemId);
-  feedItem.comments.push({
-    "author": author,
-    "contents": contents,
-    "postDate": new Date().getTime(),
-    "likeCounter": []
-  });
-  writeDocument('feedItems', feedItem);
-  // Return a resolved version of the feed item.
-  emulateServerReturn(getFeedItemSync(feedItemId), cb);
+sendXHR('POST', '/feeditem/comment', {
+  feedItemId: feedItemId,
+  authorId: author,
+  contents: contents
+}, (xhr) => {
+  cb(JSON.parse(xhr.responseText));
+});
 }
 
 /**
@@ -138,10 +136,10 @@ export function postComment(feedItemId, author, contents, cb) {
 * Provides an updated likeCounter in the response.
 */
 export function likeFeedItem(feedItemId, userId, cb) {
-sendXHR('PUT', '/feeditem/' + feedItemId + '/likelist/' + userId,
-undefined, (xhr) => {
-cb(JSON.parse(xhr.responseText));
-});
+  sendXHR('PUT', '/feeditem/' + feedItemId + '/likelist/' + userId,
+  undefined, (xhr) => {
+    cb(JSON.parse(xhr.responseText));
+  });
 }
 
 
@@ -161,18 +159,31 @@ cb(JSON.parse(xhr.responseText));
  * Adds a 'like' to a comment.
  */
 export function likeComment(feedItemId, commentIdx, userId, cb) {
+  sendXHR('PUT', '/feeditem/' + feedItemId + '/comment/' + commentIdx, + '/likelist/' + userId,
+  undefined, (xhr) => {
+    cb(JSON.parse(xhr.responseText));
+  });
+}
+
+/**
   var feedItem = readDocument('feedItems', feedItemId);
   var comment = feedItem.comments[commentIdx];
   comment.likeCounter.push(userId);
   writeDocument('feedItems', feedItem);
   comment.author = readDocument('users', comment.author);
   emulateServerReturn(comment, cb);
-}
+*/
 
 /**
  * Removes a 'like' from a comment.
  */
 export function unlikeComment(feedItemId, commentIdx, userId, cb) {
+  sendXHR('DELETE', '/feeditem/' + feedItemId + '/comment/' + commentIdx, + '/likelist/' + userId,
+  undefined, (xhr) => {
+    cb(JSON.parse(xhr.responseText));
+  });
+}
+/**
   var feedItem = readDocument('feedItems', feedItemId);
   var comment = feedItem.comments[commentIdx];
   var userIndex = comment.likeCounter.indexOf(userId);
@@ -183,6 +194,7 @@ export function unlikeComment(feedItemId, commentIdx, userId, cb) {
   comment.author = readDocument('users', comment.author);
   emulateServerReturn(comment, cb);
 }
+*/
 
 /**
  * Updates the text in a feed item (assumes a status update)
